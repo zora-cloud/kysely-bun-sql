@@ -1,0 +1,48 @@
+{
+  "name": "kysely-bun-sql",
+  "version": "1.0.0",
+  "description": "Kysely dialect for Bun's native SQL (PostgreSQL) support",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "type": "module",
+  "private": false,
+  "keywords": [
+    "kysely",
+    "bun",
+    "sql",
+    "postgres",
+    "postgresql",
+    "dialect",
+    "database",
+    "typescript"
+  ],
+  "author": "Zora Cloud",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zora-cloud/kysely-bun-sql.git"
+  },
+  "dependencies": {
+    "kysely": "^0.28.2",
+    "zod": "^3.25.50"
+  },
+  "peerDependencies": {
+    "bun": ">=1.0.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5"
+  },
+  "scripts": {
+    "build": "bun build index.ts --outdir=dist --target=bun --format=esm --minify",
+    "build:dev": "bun build index.ts --outdir=dist --target=bun --format=esm --sourcemap=external",
+    "example": "bun run example.ts",
+    "clean": "rm -rf dist"
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "package.json"
+  ]
+}
