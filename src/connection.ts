@@ -7,7 +7,7 @@ import type {
 import { BunSQLDialectError } from "./errors.js";
 
 export class BunSQLConnection implements DatabaseConnection {
-  #reservedConnection: any; // Using any for Bun SQL instance
+  #reservedConnection: any; // Using any for Bun SQL reserved connection instance
 
   constructor(reservedConnection: any) {
     this.#reservedConnection = reservedConnection;
@@ -16,17 +16,31 @@ export class BunSQLConnection implements DatabaseConnection {
   async beginTransaction(settings: TransactionSettings): Promise<void> {
     const { isolationLevel } = settings;
 
-    // Bun SQL uses sql.begin() for transactions, but for manual control we'll use raw SQL
+    // For Bun SQL, we need to handle transactions differently
+    // Since we're using a reserved connection, we'll use raw SQL for transaction control
     const isolationClause = isolationLevel
       ? ` isolation level ${isolationLevel}`
       : "";
-    const beginSQL = `begin${isolationClause}`;
+    const beginSQL = `start transaction${isolationClause}`;
 
-    await this.#reservedConnection.unsafe(beginSQL);
+    // Execute transaction command through the same path as regular queries
+    // to ensure it gets logged properly
+    await this.executeQuery({
+      sql: beginSQL,
+      parameters: [],
+      query: null,
+      queryId: "transaction-begin",
+    } as unknown as CompiledQuery<unknown>);
   }
 
   async commitTransaction(): Promise<void> {
-    await this.#reservedConnection.unsafe("commit");
+    // Execute commit through the same path as regular queries
+    await this.executeQuery({
+      sql: "commit",
+      parameters: [],
+      query: null,
+      queryId: "transaction-commit",
+    } as unknown as CompiledQuery<unknown>);
   }
 
   async executeQuery<R>(
@@ -39,18 +53,27 @@ export class BunSQLConnection implements DatabaseConnection {
         compiledQuery.parameters as any[]
       );
 
-      // Bun SQL returns different result structure than postgres.js
-      // For INSERT/UPDATE/DELETE, we need to check if the result has metadata
-      const rows = Array.isArray(result) ? result : [];
+      // Bun.SQL returns SQLResultArray objects which are arrays with additional properties
+      // For all queries: result has rows as array elements
+      // For DML queries: result.count contains affected rows count
 
-      // For DML operations, try to extract affected rows count
-      // Bun SQL might return metadata differently, so we'll handle it gracefully
-      if (typeof (result as any)?.changes === "number") {
-        const numAffectedRows = BigInt((result as any).changes);
-        return { numAffectedRows, rows };
+      const rows = Array.isArray(result) ? (result as R[]) : [];
+
+      // Extract metadata from SQLResultArray
+      let numAffectedRows: bigint | undefined = undefined;
+
+      // Check for count property (affected rows)
+      if (result && typeof result === "object" && "count" in result) {
+        const count = (result as any).count;
+        if (typeof count === "number") {
+          numAffectedRows = BigInt(count);
+        }
       }
 
-      return { rows };
+      return {
+        rows,
+        ...(numAffectedRows !== undefined && { numAffectedRows }),
+      };
     } catch (error) {
       // Re-throw with more context if needed
       throw error;
@@ -66,7 +89,13 @@ export class BunSQLConnection implements DatabaseConnection {
   }
 
   async rollbackTransaction(): Promise<void> {
-    await this.#reservedConnection.unsafe("rollback");
+    // Execute rollback through the same path as regular queries
+    await this.executeQuery({
+      sql: "rollback",
+      parameters: [],
+      query: null,
+      queryId: "transaction-rollback",
+    } as unknown as CompiledQuery<unknown>);
   }
 
   async *streamQuery<R>(
@@ -77,17 +106,48 @@ export class BunSQLConnection implements DatabaseConnection {
       throw new BunSQLDialectError("chunkSize must be a positive integer");
     }
 
-    // Bun SQL doesn't have built-in cursor support like postgres.js
-    // We'll implement a simple streaming approach using LIMIT/OFFSET
+    // For streaming, we need to determine if this is a query that supports LIMIT/OFFSET
+    const sql = compiledQuery.sql.toLowerCase().trim();
+    const hasLimit = sql.includes("limit");
+    const hasOffset = sql.includes("offset");
+
+    // Check if this is a DML query (INSERT/UPDATE/DELETE) which can't have LIMIT/OFFSET appended
+    const isDMLQuery =
+      sql.startsWith("insert ") ||
+      sql.startsWith("update ") ||
+      sql.startsWith("delete ");
+
+    if (hasLimit || hasOffset || isDMLQuery) {
+      // For queries that already have LIMIT/OFFSET or are DML queries,
+      // execute the query as-is and return all results in chunks
+      const result = await this.#reservedConnection.unsafe(
+        compiledQuery.sql,
+        compiledQuery.parameters as any[]
+      );
+
+      const rows = Array.isArray(result) ? result : result?.rows || [];
+
+      // Split results into chunks
+      for (let i = 0; i < rows.length; i += chunkSize) {
+        const chunk = rows.slice(i, i + chunkSize);
+        yield { rows: chunk };
+      }
+      return;
+    }
+
+    // For SELECT queries without LIMIT/OFFSET, implement cursor-based pagination
     let offset = 0;
 
     while (true) {
+      // Add LIMIT and OFFSET to the original query
       const paginatedSQL = `${compiledQuery.sql} LIMIT ${chunkSize} OFFSET ${offset}`;
 
-      const rows = await this.#reservedConnection.unsafe(
+      const result = await this.#reservedConnection.unsafe(
         paginatedSQL,
         compiledQuery.parameters as any[]
       );
+
+      const rows = Array.isArray(result) ? result : result?.rows || [];
 
       if (!rows || rows.length === 0) {
         break;

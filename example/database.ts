@@ -43,13 +43,23 @@ export interface Database {
   posts: PostsTable;
 }
 
+// Get database URL from environment variables
+// Defaults to a local PostgreSQL instance for development
+const databaseUrl = process.env.DATABASE_URL;
+
+if (!databaseUrl) {
+  throw new Error("DATABASE_URL environment variable is required");
+}
+
+console.log(
+  `🔗 Connecting to database: ${databaseUrl.replace(/\/\/.*@/, "//***@")}`
+);
+
 // Create Bun SQL instance
 export const sql = new SQL({
-  url:
-    process.env.DATABASE_URL ||
-    "postgres://postgres:postgres@localhost:5432/kysely-bun-sql-example",
-  max: 10,
-  idleTimeout: 30,
+  url: databaseUrl,
+  max: 10, // Maximum number of connections in the pool
+  idleTimeout: 30, // Close idle connections after 30 seconds
 });
 
 // Create Kysely database instance with BunSQLDialect

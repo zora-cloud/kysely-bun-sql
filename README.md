@@ -119,6 +119,26 @@ Bun SQL automatically reads PostgreSQL connection parameters from environment va
 - `PGPASSWORD` - Database password
 - `PGDATABASE` - Database name
 
+### Using .env Files
+
+Since Bun automatically loads `.env` files, you can create a `.env` file in your project root:
+
+```env
+DATABASE_URL=postgres://user:password@localhost:5432/database
+```
+
+Then use it in your code:
+
+```typescript
+import { SQL } from "bun";
+
+const sql = new SQL({
+  url: process.env.DATABASE_URL!,
+  max: 20,
+  idleTimeout: 30,
+});
+```
+
 ## Error Handling
 
 The dialect includes custom error handling for Bun SQL specific errors:
