@@ -7,7 +7,7 @@ This dialect allows you to use Kysely's type-safe query builder with Bun's built
 ## Installation
 
 ```bash
-bun add kysely-bun-sql kysely
+bun add git+https://github.com/zora-cloud/kysely-bun-sql.git
 ```
 
 ## Usage
