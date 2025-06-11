@@ -2,8 +2,18 @@
   "name": "kysely-bun-sql",
   "version": "1.0.0",
   "description": "Kysely dialect for Bun's native SQL (PostgreSQL) support",
-  "main": "dist/index.js",
-  "module": "dist/index.js",
+  "main": "./src/database.ts",
+  "types": "./src/database.ts",
+  "exports": {
+    ".": {
+      "types": "./src/database.ts",
+      "import": "./src/database.ts"
+    },
+    "./schema": {
+      "types": "./src/schema.ts",
+      "import": "./src/schema.ts"
+    }
+  },
   "type": "module",
   "private": false,
   "keywords": [

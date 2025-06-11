@@ -75,6 +75,72 @@ describe("BunSQLDialect", () => {
     expect(persons).toEqual([{ last_name: "Aniston" }]);
   });
 
+  test("should work with withSchema", async () => {
+    // First, insert a toy in the main schema
+    const pet = await ctx.db
+      .selectFrom("pet")
+      .select("id")
+      .executeTakeFirstOrThrow();
+
+    await ctx.db
+      .insertInto("toy")
+      .values({
+        name: "Main Schema Ball",
+        pet_id: pet.id,
+        price: 10.99,
+      })
+      .execute();
+
+    // Insert a toy in the toy_schema using withSchema
+    const insertQuery = ctx.db
+      .withSchema("toy_schema")
+      .insertInto("toy")
+      .values({
+        name: "Schema Ball",
+        pet_id: pet.id,
+        price: 15.99,
+      });
+
+    testSql(insertQuery, {
+      sql: 'insert into "toy_schema"."toy" ("name", "pet_id", "price") values ($1, $2, $3)',
+      parameters: ["Schema Ball", pet.id, 15.99],
+    });
+
+    await insertQuery.execute();
+
+    // Test querying from the schema
+    const selectQuery = ctx.db
+      .withSchema("toy_schema")
+      .selectFrom("toy")
+      .select(["name", "price"])
+      .where("name", "=", "Schema Ball");
+
+    testSql(selectQuery, {
+      sql: 'select "name", "price" from "toy_schema"."toy" where "name" = $1',
+      parameters: ["Schema Ball"],
+    });
+
+    const schemaToys = await selectQuery.execute();
+
+    expect(schemaToys).toHaveLength(1);
+    expect(schemaToys[0]).toEqual({
+      name: "Schema Ball",
+      price: 15.99,
+    });
+
+    // Test that regular queries still work and don't see schema data
+    const mainToys = await ctx.db
+      .selectFrom("toy")
+      .select(["name", "price"])
+      .execute();
+
+    expect(mainToys).toHaveLength(1);
+    expect(mainToys[0]).toEqual({
+      name: "Main Schema Ball",
+      price: 10.99,
+    });
+  });
+
   test("should run multiple transactions in parallel", async () => {
     const threads = Array.from({ length: 25 }).map((_, index) => ({
       id: 1000000 + index + 1,

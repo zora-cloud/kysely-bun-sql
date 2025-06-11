@@ -187,9 +187,12 @@ async function connect(config: KyselyConfig): Promise<Kysely<Database>> {
 }
 
 async function dropDatabase(db: Kysely<Database>): Promise<void> {
-  await db.schema.dropTable("toy").ifExists().execute();
-  await db.schema.dropTable("pet").ifExists().execute();
-  await db.schema.dropTable("person").ifExists().execute();
+  // Drop the test schema first (it contains foreign key constraints)
+  await db.schema.dropSchema("toy_schema").ifExists().cascade().execute();
+  // Drop tables in order of dependencies
+  await db.schema.dropTable("toy").ifExists().cascade().execute();
+  await db.schema.dropTable("pet").ifExists().cascade().execute();
+  await db.schema.dropTable("person").ifExists().cascade().execute();
 }
 
 async function insertPetForPerson(
@@ -242,6 +245,9 @@ export function expectToContainSubset(actual: any[], expected: any[]): void {
 async function createDatabase(db: Kysely<Database>): Promise<void> {
   await dropDatabase(db);
 
+  // Create the toy_schema for testing withSchema functionality
+  await db.schema.createSchema("toy_schema").ifNotExists().execute();
+
   await createTableWithId(db.schema, "person")
     .addColumn("first_name", "varchar(255)")
     .addColumn("middle_name", "varchar(255)")
@@ -260,6 +266,15 @@ async function createDatabase(db: Kysely<Database>): Promise<void> {
   await createTableWithId(db.schema, "toy")
     .addColumn("name", "varchar(255)", (col) => col.notNull())
     .addColumn("pet_id", "integer", (col) => col.references("pet.id").notNull())
+    .addColumn("price", "double precision", (col) => col.notNull())
+    .execute();
+
+  // Create the same toy table in the toy_schema for testing withSchema
+  await createTableWithId(db.withSchema("toy_schema").schema, "toy")
+    .addColumn("name", "varchar(255)", (col) => col.notNull())
+    .addColumn("pet_id", "integer", (col) =>
+      col.references("public.pet.id").notNull()
+    )
     .addColumn("price", "double precision", (col) => col.notNull())
     .execute();
 
